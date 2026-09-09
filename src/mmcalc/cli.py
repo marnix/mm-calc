@@ -9,12 +9,35 @@ from pathlib import Path
 from mmcalc import __version__
 from mmcalc.config import parse_settings
 from mmcalc.generator import generate_mm
-from mmcalc.parser import parse_file
+from mmcalc.parser import ProofFile, parse_file
+
+
+def _autogenerate_tokens(
+    pf: ProofFile,
+    db_path: Path,
+    tool: str | None = None,
+) -> None:
+    """Fill in theorem proof tokens from the calc steps, if absent.
+
+    If the theorem has no proof tokens (or only a `?` placeholder),
+    derive them from the first calculation via the proof engine and
+    merge any required disjoint-variable constraints.
+    """
+    if pf.proof_tokens.strip() not in ("", "?") or not pf.calculations:
+        return
+    from mmcalc.engine import derive_calc_proof
+
+    calc = pf.calculations[0]
+    tokens, disjoint = derive_calc_proof(
+        db_path, calc, pf.theorem_statement, tool=tool
+    )
+    pf.proof_tokens = " ".join(tokens)
+    pf.disjoint = list(dict.fromkeys(list(pf.disjoint) + disjoint))
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
     """Generate a .mm file from an .mmcalc file and verify it."""
-    from mmcalc.knife import run_knife
+    from mmcalc.knife import _mm_tool, run_knife
 
     mmcalc_path = Path(args.file)
     try:
@@ -30,6 +53,14 @@ def cmd_generate(args: argparse.Namespace) -> int:
         except Exception as e:
             print(f"Error parsing settings {args.settings}: {e}", file=sys.stderr)
             return 1
+
+    try:
+        includes = (settings.database_includes if settings else []) + list(pf.settings)
+        db_path = Path(includes[0]) if includes else Path("set.mm")
+        _autogenerate_tokens(pf, db_path, tool=_mm_tool())
+    except Exception as e:
+        print(f"Error deriving proof tokens: {e}", file=sys.stderr)
+        return 1
 
     out_path = Path(args.output) if args.output else mmcalc_path.with_suffix(".mm")
     out_str = generate_mm(pf, settings)
