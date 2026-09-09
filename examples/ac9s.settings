@@ -1,24 +1,27 @@
 # mmcalc settings for the ac9s example.
 #
 # 1. The mathematical context: the target database.
-# 2. The parsing rules.  To parse the expression ` x y z ` we construct
-#    the unique proof tree of ` TOPLEVEL x y z `; that proof tree *is*
-#    the parse tree of ` x y z `.  The TOPLEVEL token and its axioms are
+# 2. The parsing rules.  To parse the top-level expression ` x y z ` (a
+#    statement, i.e. a typecode followed by a formula) we construct the
+#    unique proof tree of ` TOPLEVEL x y z `; that proof tree *is* the
+#    parse tree of ` x y z `.  The TOPLEVEL token and its axioms are
 #    provided here, so the mmcalc code itself never knows any specific
 #    Metamath token (no `(`, `)`, `|-`, `<->`, ...).
 #
-# The TOP.* axioms below mimic the grammar nonterminals.  Their
-# conclusions are ` TOPLEVEL ph `, ` TOPLEVEL x `, ` TOPLEVEL A `,
-# ` TOPLEVEL |- ph `, using set.mm's own variables (`$f wff ph $`,
-# `$f setvar x $`, `$f class A $` are all in scope at the end of set.mm's
-# $v/$f declarations), so MMA can unify any composite expression into the
-# variable and `improve all` builds the whole grammar tree underneath.
+# Each TOP.* axiom below says that a statement of that typecode may be
+# used as a top-level expression.  For example ` TOPLEVEL |- ph ` says
+# ` |- ph ` is a valid top-level statement: its proof is the parse tree of
+# ` |- ph `, ending in TOP.turnstile applied to ph, where ` wff ph ` is
+# proved underneath from the grammar.
+#
+# The axioms use set.mm's own variables ($f wff ph $, $f setvar x $,
+# $f class A $ are all in scope at the end of set.mm).
 
 $[ set.mm $]
 
 $c TOPLEVEL $.
 
-TOP.wff $a TOPLEVEL ph $.
-TOP.set $a TOPLEVEL x $.
-TOP.class $a TOPLEVEL A $.
+TOP.wff $a TOPLEVEL wff ph $.
+TOP.set $a TOPLEVEL setvar x $.
+TOP.class $a TOPLEVEL class A $.
 TOP.turnstile $a TOPLEVEL |- ph $.
