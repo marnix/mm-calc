@@ -1,162 +1,142 @@
-"""Proof engine: builds Metamath proof trees from calculational steps.
+"""Proof engine: build Metamath proof trees from calculational steps.
 
-Uses metamath-knife to look up theorem statements and parse expressions,
-then constructs proof trees by chaining rule applications.
+Slice 1: a calc with a single relational step whose relation is stated by
+applying exactly one rule.  The engine looks up the rule's statement with
+the reference tool, verifies that the theorem statement is a verbatim
+instance of the rule's conclusion, and emits the proof: the rule's
+mandatory hypotheses (in RPN order, as the reference tool lists them)
+followed by the rule label, together with the rule's mandatory disjoint
+variable pairs so the generated theorem block can declare them.
+
+The engine never interprets any Metamath *mathematical* token (no `|-`,
+`<->`, parens, ...): the theorem statement is compared to the rule's
+conclusion as opaque token text, and structure is recovered only via the
+reference tool's statement metadata.
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mmcalc.knife import dump_formula, run_knife
-from mmcalc.parser import Calculation, ProofFile
+from mmcalc.knife import _mm_tool
+from mmcalc.parser import Calculation
+
+
+class EngineError(Exception):
+    """Raised when the engine cannot derive a proof (unused/partial)."""
 
 
 @dataclass
-class StatementInfo:
-    """Information about a Metamath statement from dump-formula."""
+class RuleInfo:
+    """Metadata for a statement used as a proof rule."""
 
     label: str
-    formula_tokens: list[str] = field(default_factory=list)
-    num_vars: int = 0
+    conclusion: list[str] = field(default_factory=list)  # token text
+    mandatory_hyps: list[str] = field(default_factory=list)  # labels, RPN order
+    disjoint: list[tuple[str, str]] = field(default_factory=list)  # variable pairs
+    has_e_hyp: bool = False
 
 
-@dataclass
-class ProofNode:
-    """A node in a Metamath proof tree."""
-
-    label: str
-    children: list[ProofNode] = field(default_factory=list)
-    is_hypothesis: bool = False
+_RE_STMT = re.compile(r"^\s*\d+\s+(\S+)\s*\$p\s+(.*?)\s*\$=", re.DOTALL | re.MULTILINE)
+_RE_HYP_RPN = re.compile(r"^\s+(\S+)\s+\$f\s+", re.MULTILINE)
+_RE_HYP_E = re.compile(r"^\s+(\S+)\s+\$e\s+", re.MULTILINE)
+_RE_DISJOINT = re.compile(r"<(\w+),(\w+)>")
 
 
-class ProofEngine:
-    """Builds Metamath proof trees using metamath-knife for lookups."""
+def rule_info(db_path: Path, label: str, tool: str | None = None) -> RuleInfo:
+    """Look up a rule's statement metadata via the reference tool.
 
-    def __init__(self, database_path: Path) -> None:
-        self.database_path = database_path
-        self._formula_cache: dict[str, StatementInfo] = {}
-        self._grammar_dump: str | None = None
-
-    def _load_formulas(self) -> None:
-        """Load formula dump from metamath-knife."""
-        if self._formula_cache:
-            return
-        result = dump_formula(self.database_path)
-        for line in result.splitlines():
-            line = line.strip()
-            if not line or line.startswith("Formula") or line.startswith("0 "):
-                continue
-            m = re.match(r"(\S+):\s*(.*)", line)
-            if m:
-                label = m.group(1)
-                tokens_str = m.group(2).strip()
-                tokens = tokens_str.split() if tokens_str else []
-                self._formula_cache[label] = StatementInfo(
-                    label=label, formula_tokens=tokens
-                )
-
-    def get_statement_info(self, label: str) -> StatementInfo | None:
-        """Get formula info for a statement label."""
-        self._load_formulas()
-        return self._formula_cache.get(label)
-
-    def list_statements(self) -> list[str]:
-        """List all statement labels in the database."""
-        result = run_knife(["--list-statements"], self.database_path)
-        labels = []
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if not line or line.startswith("-") or line.startswith("0 "):
-                continue
-            parts = line.split()
-            if parts:
-                labels.append(parts[0])
-        return labels
-
-    def get_hypotheses(self, label: str) -> list[str]:
-        """Get hypothesis labels for a theorem."""
-        result = run_knife(["--list-statements"], self.database_path)
-        lines = result.stdout.splitlines()
-        found = False
-        hyps: list[str] = []
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith("0 "):
-                if found:
-                    break
-                continue
-            if line.startswith("-"):
-                if found:
-                    break
-                continue
-            if found:
-                parts = line.split()
-                if parts:
-                    hyps.append(parts[0])
-                continue
-            parts = line.split()
-            if parts and parts[0] == label:
-                found = True
-                # Check if previous lines were hypotheses
-                # Actually, the format groups hypotheses with their conclusion
-        return hyps
-
-    def export_proof(self, label: str, dest: Path) -> str:
-        """Export an existing proof to .mmp format."""
-        run_knife(["--export", label], self.database_path)
-        mmp_path = self.database_path.parent / f"{label}.mmp"
-        if mmp_path.exists():
-            content = mmp_path.read_text(encoding="utf-8")
-            return content
-        return ""
-
-    def build_proof_tree(
-        self, pf: ProofFile, settings_db: str
-    ) -> ProofNode | None:
-        """Build a proof tree from a parsed calculational proof file.
-
-        This is a simplified version that constructs the proof structure.
-        Full proof generation requires expression unification which is
-        the core hard problem.
-        """
-        # For now, return a placeholder indicating the proof structure
-        # This will be expanded as we implement the proof search
-        return None
-
-
-def generate_proof_tokens(
-    engine: ProofEngine,
-    calc: Calculation,
-    theorem_label: str,
-) -> str:
-    """Generate Metamath proof tokens for a calculational proof.
-
-    For the initial version, this outputs a proof stub that can be
-    completed manually. Full auto-generation requires expression
-    unification against the grammar.
+    Parses the output of `show statement <label> /full`, which lists the
+    statement's mandatory hypotheses in RPN order and its mandatory
+    disjoint-variable pairs.
     """
-    # Collect all referenced labels from justifications
-    labels_used: list[str] = []
-    for step in calc.steps:
-        if step.justification:
-            for ref in step.justification.rule_refs:
-                if ref not in labels_used:
-                    labels_used.append(ref)
-            for ref in step.justification.using_refs:
-                if ref not in labels_used:
-                    labels_used.append(ref)
+    db = str(db_path.resolve())
+    tool = _mm_tool() if tool is None else tool
+    result = subprocess.run(
+        [tool, f'read "{db}"', f"show statement {label} /full", "exit"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    stdout = result.stdout
+    if result.returncode != 0 or f"{label} $p" not in stdout:
+        raise RuntimeError(stdout or result.stderr)
 
-    # Look up formulas for each referenced label
-    formulas: dict[str, StatementInfo] = {}
-    for label in labels_used:
-        info = engine.get_statement_info(label)
-        if info:
-            formulas[label] = info
+    info = RuleInfo(label=label)
+    m = _RE_STMT.search(stdout)
+    if m:
+        info.conclusion = m.group(2).split()
 
-    # Build a placeholder proof token list
-    # In a full implementation, this would perform unification
-    token_parts = [f"({label})" for label in labels_used if label in formulas]
-    return "".join(token_parts)
+    # Mandatory hypotheses (RPN order): all $f hyps (slice 1: no $e hyps)
+    e_hyps = _RE_HYP_E.findall(stdout)
+    info.has_e_hyp = bool(e_hyps)
+    if not e_hyps:
+        info.mandatory_hyps = _RE_HYP_RPN.findall(stdout)
+
+    # Mandatory disjoint variable pairs (only the "mandatory" line)
+    m_dj = re.search(
+        r"Its mandatory disjoint variable pairs are:\s+(.*(?:\n\s+[^\n]*)*)",
+        stdout,
+    )
+    if m_dj:
+        info.disjoint = [(a, b) for a, b in _RE_DISJOINT.findall(m_dj.group(1))]
+
+    return info
+
+
+def derive_calc_proof(
+    db_path: Path,
+    calc: Calculation,
+    theorem_statement: str,
+    tool: str | None = None,
+) -> tuple[list[str], list[str]]:
+    """Derive proof tokens for a single-relation calc.
+
+    Returns ``(tokens, disjoint)`` where ``disjoint`` is a list of
+    ``"x y"`` disjoint-variable constraints the generated theorem block
+    must declare for the proof to verify.
+
+    Raises UnsupportedError/ValueError if the calc is not of slice-1 shape.
+    """
+    steps = calc.steps
+    if len(steps) != 3:
+        raise NotImplementedError(
+            "slice 1: exactly one relational step (3 calc lines) supported"
+        )
+    expr_left, rel_step, expr_right = steps
+    if expr_left.justification is not None or expr_right.justification is not None:
+        raise NotImplementedError(
+            "slice 1: only the relational step may carry a justification"
+        )
+    if rel_step.justification is None or len(rel_step.justification.rule_refs) != 1:
+        raise NotImplementedError(
+            "slice 1: exactly one rule in the relation step's hint"
+        )
+    if rel_step.justification.using_refs:
+        raise NotImplementedError("slice 1: 'using' hints not supported")
+
+    rule = rel_step.justification.rule_refs[0]
+    info = rule_info(db_path, rule, tool=tool)
+    if info.has_e_hyp:
+        raise NotImplementedError(f"slice 1: rule {rule} has $e hypotheses")
+
+    theorem_tokens = " ".join(theorem_statement.split())
+    conclusion_tokens = " ".join(info.conclusion)
+    if theorem_tokens != conclusion_tokens:
+        raise ValueError(
+            f"theorem statement does not match the conclusion of {rule}:\n"
+            f"  theorem:    {theorem_tokens}\n"
+            f"  conclusion: {conclusion_tokens}"
+        )
+
+    # The calc's two expressions must appear verbatim inside the statement
+    for expr in (expr_left.expression, expr_right.expression):
+        if " ".join(expr.split()) not in theorem_tokens:
+            raise ValueError(f"calc expression not in theorem statement: {expr}")
+
+    tokens = list(info.mandatory_hyps) + [rule]
+    disjoint = [f"{a} {b}" for a, b in info.disjoint]
+    return tokens, disjoint

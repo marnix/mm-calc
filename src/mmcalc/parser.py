@@ -253,7 +253,7 @@ def parse_file(source: str | Path) -> ProofFile:
             continue
 
         # Block delimiters
-        if stripped in ("$", "$}", "${"):
+        if stripped in ("$", "$}", "${", "$$"):
             continue
 
         # "." terminates a calculation; "$." book-ends are handled above
