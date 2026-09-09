@@ -6,18 +6,19 @@
 #    the parse tree of ` x y z `.  The TOPLEVEL token and its axioms are
 #    provided here, so the mmcalc code itself never knows any specific
 #    Metamath token (no `(`, `)`, `|-`, `<->`, ...).
+#
+# The TOP.* axioms below mimic the grammar nonterminals.  Their
+# conclusions are ` TOPLEVEL ph `, ` TOPLEVEL x `, ` TOPLEVEL A `,
+# ` TOPLEVEL |- ph `, using set.mm's own variables (`$f wff ph $`,
+# `$f setvar x $`, `$f class A $` are all in scope at the end of set.mm's
+# $v/$f declarations), so MMA can unify any composite expression into the
+# variable and `improve all` builds the whole grammar tree underneath.
 
 $[ set.mm $]
 
-$v ph x A B $.
-$f wff ph $.
-$f setvar x $.
-$f class A $.
-$f class B $.
-
 $c TOPLEVEL $.
 
-TOP.wff $a TOPLEVEL wff ph $.
+TOP.wff $a TOPLEVEL ph $.
+TOP.set $a TOPLEVEL x $.
+TOP.class $a TOPLEVEL A $.
 TOP.turnstile $a TOPLEVEL |- ph $.
-TOP.set $a TOPLEVEL setvar x $.
-TOP.class $a TOPLEVEL class A $.

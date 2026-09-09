@@ -148,9 +148,7 @@ def _is_comment_line(stripped: str) -> bool:
         return True
     if stripped.startswith("*"):
         return True
-    if stripped.startswith("$(") or stripped.startswith("$)") or stripped == "$":
-        return True
-    return False
+    return stripped.startswith("$(") or stripped.startswith("$)") or stripped == "$"
 
 
 def parse_file(source: str | Path) -> ProofFile:

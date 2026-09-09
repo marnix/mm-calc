@@ -7,12 +7,11 @@ then constructs proof trees by chaining rule applications.
 from __future__ import annotations
 
 import re
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from mmcalc.knife import dump_formula, dump_grammar, run_knife
-from mmcalc.parser import Calculation, Justification, ProofFile, Step
+from mmcalc.knife import dump_formula, run_knife
+from mmcalc.parser import Calculation, ProofFile
 
 
 @dataclass

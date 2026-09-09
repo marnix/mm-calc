@@ -153,6 +153,22 @@ def cmd_statement(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_parse_expr(args: argparse.Namespace) -> int:
+    """Parse a Metamath expression via TOPLEVEL, printing its parse tree RPN."""
+    from mmcalc.config import parse_settings
+    from mmcalc.toplevel import parse_tree_rpn
+
+    try:
+        settings = parse_settings(Path(args.settings))
+        db = Path(args.database)
+        rpn = parse_tree_rpn(db, args.expression, settings)
+        print(" ".join(rpn))
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -209,6 +225,17 @@ def main(argv: list[str] | None = None) -> int:
     p_statement.add_argument("label", help="Statement label")
     p_statement.add_argument("database", help="Path to .mm file")
 
+    # parse-expr subcommand: database-independent expression parsing
+    p_px = sub.add_parser(
+        "parse-expr",
+        help="Parse a Metamath expression via TOPLEVEL and print its parse tree RPN",
+    )
+    p_px.add_argument("expression", help="Expression token sequence to parse")
+    p_px.add_argument(
+        "--database", required=True, help="Path to the database (e.g. set.mm)"
+    )
+    p_px.add_argument("--settings", required=True, help="Path to the .settings file")
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -224,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         "export": cmd_export,
         "proof": cmd_proof,
         "statement": cmd_statement,
+        "parse-expr": cmd_parse_expr,
     }
     return commands[args.command](args)
 
