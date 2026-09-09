@@ -1,0 +1,55 @@
+$[ set.mm $]
+
+$( ac9s: An Axiom of Choice equivalent.
+
+   Calculational proof (structured derivation) of:
+     |-( A. x e. A B =/= (/) <-> X_ x e. A B =/= (/) )
+   under hypothesis  A e. _V.
+
+   Format: each step line is an opaque Metamath token sequence with an
+   optional justification { by <rule> using <rules> }.  The mmcalc parser
+   does not interpret any tokens (relations like <->, the turnstile |-,
+   parentheses, ... are just data); expression structure is recovered only
+   via TOPLEVEL parsing using the rules in the .settings file.
+
+   This is based on the metamathematics of ~ ac9s in set.mm.
+   The proof tokens are the UNCOMPRESSED label sequence, as produced by
+     metamath 'show proof ac9s /normal'
+   with the hypothesis label ac9.1 renamed to myac9.1 to avoid a clash
+   with the existing ac9.1 in set.mm.  Each step applies a statement
+   which pops its own mandatory hypotheses off the proof stack. $)
+
+$( Context / theorem declaration (machine-verifiable part) $)
+
+${
+  $d f x A $.  $d f B $.
+  myac9.1 $e |- A e. _V $.
+  myac9s $p |- ( A. x e. A B =/= (/) <-> X_ x e. A B =/= (/) ) $=
+    cB c0 wne vx cA wral vx cA cB cixp c0 wne
+    cB c0 wne vx cA wral vf cv cA wfn vx cv vf cv
+    cfv cB wcel vx cA wral wa vf wex vx cA cB cixp
+    c0 wne vx cA cB vf myac9.1 ac6s4 vx cA cB cixp
+    c0 wne vf cv vx cA cB cixp wcel vf wex vf cv
+    cA wfn vx cv vf cv cfv cB wcel vx cA wral wa
+    vf wex vf vx cA cB cixp n0 vf cv vx cA cB cixp
+    wcel vf cv cA wfn vx cv vf cv cfv cB wcel vx
+    cA wral wa vf vx cA cB vf cv vf vex elixp exbii
+    bitr2i sylib vx cA cB ixpn0 impbii $.
+$}
+
+$( Calculational proof:
+
+   Starting from  X_ x e. A B =/= (/)  we show it is equivalent to
+   A. x e. A B =/= (/).  The key ping-pong argument introduces a fresh
+   variable f and the double implication at the end (impbii). $)
+
+X_ x e. A B =/= (/)
+    <-> { by (n0) using (bicomi) } (bitri)
+    E. f f e. X_ x e. A B
+    <-> { by (elixp) and (vex) using (bitcomi) and (exbii) } (sylib)
+    E. f ( f Fn A /\ A. x e. A ( f ` x ) e. B )
+    <- { by (ac6s4) and (myac9.1) } (impbii)
+    A. x e. A B =/= (/)
+    <- { by (ixpn0) } 
+    X_ x e. A B =/= (/)
+    .

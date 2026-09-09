@@ -1,9 +1,15 @@
 """Parser for the mmcalc calculational proof file format.
 
-The format allows writing structured derivations that expand to Metamath proofs.
+An `.mmcalc` file contains:
 
-See the design document for full specification:
-https://groups.google.com/g/metamath/c/aNki7h6G50A/m/-hsjesajGAAJ
+- Settings lines: `$[ database $]`
+- Comment lines: `$( ... $)` or `* ...`
+- Metamath declarations: `$d`, `$e`, `$p` (the machine-verifiable theorem)
+- A calculational proof (structured derivation) with justification hints
+
+See design.md for the full specification.
+
+Original idea: https://groups.google.com/g/metamath/c/aNki7h6G50A/m/-hsjesajGAAJ
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ from typing import TextIO
 class Step:
     """A single step in a calculational proof."""
 
-    expression: str
+    expression: str  # opaque Metamath token text
     justification: Justification | None = None
 
 
@@ -44,14 +50,24 @@ class Calculation:
 class ProofFile:
     """A complete calculational proof file."""
 
-    context_label: str = ""
-    context_line: str = ""  # $==>
+    settings: list[str] = field(default_factory=list)  # $[ db $] includes
+    disjoint: list[str] = field(default_factory=list)  # $d constraints
+    hypotheses: list[tuple[str, str]] = field(default_factory=list)  # (label, stmt)
+    theorem_label: str = ""
+    theorem_statement: str = ""
+    proof_tokens: str = ""  # optional explicit $= tokens
     calculations: list[Calculation] = field(default_factory=list)
-    preamble: list[str] = field(default_factory=list)  # raw preamble lines
+    preamble: list[str] = field(default_factory=list)  # raw comment lines
 
 
-_RE_RULE_REF = re.compile(r"\((-?\d+):(\w+)\)|\((\w+)\)")
-_RE_JUSTIFICATION = re.compile(r"\{\s*by\s+(.+?)\s*\}")
+_RE_RULE_REF = re.compile(r"\((-?\d+):([\w.]+)\)|\(([\w.]+)\)")
+_RE_JUSTIFICATION = re.compile(r"\{\s*by\s+(.+?)\}")
+_RE_INCLUDE = re.compile(r"\$\[\s*(.+?)\s*\$\]")
+_RE_DISJOINT = re.compile(r"^\$d\s+(.*?)\s*\.\s*$")
+_RE_HYPOTHESIS = re.compile(r"([\w.]+)\s*\$e\s+(.*?)\s*\.?\s*$")
+_RE_THEOREM = re.compile(
+    r"([\w.]+)\s*\$p\s+(.*?)\s*\$=\s*(.*?)\s*\.\s*$", re.DOTALL
+)
 
 
 def _parse_justification(text: str) -> Justification | None:
@@ -63,19 +79,22 @@ def _parse_justification(text: str) -> Justification | None:
     inner = m.group(1)
     just = Justification()
 
-    for ref_match in _RE_RULE_REF.finditer(inner):
-        if ref_match.group(1) is not None:
-            just.index = int(ref_match.group(1))
-            just.rule_refs.append(ref_match.group(2))
-        else:
-            just.rule_refs.append(ref_match.group(3))
-
     if "using" in inner:
         parts = inner.split("using")
-        rules_part = parts[0]
-        using_part = parts[1] if len(parts) > 1 else ""
-        just.rule_refs = [r.strip() for r in re.findall(r"\((\w+)\)", rules_part)]
-        just.using_refs = [r.strip() for r in re.findall(r"\((\w+)\)", using_part)]
+        rules_part, using_part = parts[0], parts[1]
+        just.rule_refs = [
+            r for r in re.findall(r"\(([\w.]+)\)", rules_part)
+        ]
+        just.using_refs = [
+            r for r in re.findall(r"\(([\w.]+)\)", using_part)
+        ]
+    else:
+        for ref_match in _RE_RULE_REF.finditer(inner):
+            if ref_match.group(1) is not None:
+                just.index = int(ref_match.group(1))
+                just.rule_refs.append(ref_match.group(2))
+            else:
+                just.rule_refs.append(ref_match.group(3))
 
     # Also look for indexed rule references outside the { by ... } block
     after = text[m.end():]
@@ -88,7 +107,12 @@ def _parse_justification(text: str) -> Justification | None:
 
 
 def _parse_step_line(line: str) -> Step | None:
-    """Parse a single step line, extracting expression and justification."""
+    """Parse a single step line, extracting expression and justification.
+
+    The expression is kept as opaque Metamath token text; nothing here
+    interprets any particular Metamath symbol (no `|-`, `<->`, parens, ...).
+    The structure of expressions is recovered only through TOPLEVEL parsing.
+    """
     line = line.strip()
     if not line:
         return None
@@ -96,15 +120,10 @@ def _parse_step_line(line: str) -> Step | None:
     justification = _parse_justification(line)
     step_text = _RE_JUSTIFICATION.sub("", line).strip()
 
-    # Strip indexed rule references like (-1:impbii) that appear after justification
-    step_text = re.sub(r"\s*\(-?\d+:\w+\)\s*$", "", step_text).strip()
+    # Strip an indexed rule reference like (1:impbii) after the justification
+    step_text = re.sub(r"\(\s*-?\d+\s*:\s*[\w.]+\s*\)\s*$", "", step_text).strip()
 
-    # Strip trailing relational operators like <-> or <-
-    step_text = re.sub(r"\s*<->\s*$", "", step_text).strip()
-    step_text = re.sub(r"\s*<-\s*$", "", step_text).strip()
-    step_text = re.sub(r"\s*=\s*$", "", step_text).strip()
-
-    if not step_text:
+    if not step_text or step_text == "$...":
         return None
 
     return Step(expression=step_text, justification=justification)
@@ -114,60 +133,147 @@ def parse_calculation(text: str) -> Calculation:
     """Parse a calculation block from the proof text."""
     calc = Calculation()
     for line in text.splitlines():
-        step = _parse_step_line(line)
+        stripped = line.strip()
+        if stripped == "." or not stripped:
+            continue
+        step = _parse_step_line(stripped)
         if step:
             calc.steps.append(step)
     return calc
 
 
-def _extract_context_and_calcs(text: str) -> tuple[str, str, list[str]]:
-    """Split text into context label, context line, and calculation segments.
-
-    The format uses:
-    - *...* lines as context/comment lines
-    - $==> separating context from proof steps
-    - . separating proof steps
-    """
-    context_label = ""
-    context_line = ""
-    segments: list[str] = []
-
-    # Find $==> to split context from calculations
-    parts = text.split("$==>", 1)
-    if len(parts) < 2:
-        # No $==> found, treat entire text as context
-        for line in parts[0].splitlines():
-            m = re.search(r"\*\s*\((\w+\.\d+)\)\s*\|-\s*(.+)", line)
-            if m:
-                context_label = m.group(1)
-                context_line = m.group(2).strip()
-        return context_label, context_line, []
-
-    preamble_text = parts[0]
-    calc_text = parts[1]
-
-    # Extract context label from preamble
-    for line in preamble_text.splitlines():
-        m = re.search(r"\*\s*\((\w+\.\d+)\)\s*\|-\s*(.+)", line)
-        if m:
-            context_label = m.group(1)
-            context_line = m.group(2).strip()
-
-    # Split calculation text on '.' terminators
-    segments = [seg.strip() for seg in calc_text.split(".") if seg.strip()]
-
-    return context_label, context_line, segments
+def _is_comment_line(stripped: str) -> bool:
+    """Check whether a line is a comment or empty (to be skipped)."""
+    if not stripped:
+        return True
+    if stripped.startswith("*"):
+        return True
+    if stripped.startswith("$(") or stripped.startswith("$)") or stripped == "$":
+        return True
+    return False
 
 
 def parse_file(source: str | Path) -> ProofFile:
     """Parse an mmcalc proof file."""
     text = source.read_text(encoding="utf-8") if isinstance(source, Path) else source
-
     pf = ProofFile()
-    pf.context_label, pf.context_line, segments = _extract_context_and_calcs(text)
+    lines = text.splitlines()
 
-    for segment in segments:
-        calc = parse_calculation(segment)
+    in_calc = False
+    in_comment = False
+    in_proof = False  # collecting $p proof tokens
+    calc_lines: list[str] = []
+    proof_buf: list[str] = []
+
+    def handle_comment(stripped: str) -> bool:
+        """Handle multiline $( ... $) comments; returns True if handled."""
+        nonlocal in_comment
+        if in_comment:
+            if "$)" in stripped:
+                in_comment = False
+            pf.preamble.append(stripped)
+            return True
+        if stripped.startswith("$("):
+            in_comment = True
+            if "$)" in stripped:
+                in_comment = False
+            pf.preamble.append(stripped)
+            return True
+        return False
+
+    for raw in lines:
+        stripped = raw.strip()
+
+        if not stripped:
+            if in_proof:
+                proof_buf.append("")
+            elif in_calc:
+                calc_lines.append("")
+            continue
+
+        # Multi-line comment handling
+        if handle_comment(stripped):
+            continue
+
+        # If we're collecting proof tokens, look for $. terminator
+        if in_proof:
+            if stripped == "$." or stripped.endswith("$."):
+                # Extract any trailing tokens on this line before $.
+                tok_line = stripped[: stripped.rfind("$.")].strip()
+                if tok_line:
+                    proof_buf.append(tok_line)
+                pf.proof_tokens = " ".join(proof_buf).strip()
+                in_proof = False
+            else:
+                proof_buf.append(stripped)
+            continue
+
+        # Settings line
+        m = _RE_INCLUDE.match(stripped)
+        if m:
+            pf.settings.append(m.group(1))
+            continue
+
+        # Single-line "*" comments
+        if stripped.startswith("*"):
+            pf.preamble.append(stripped)
+            continue
+
+        # Disjoint constraints (possibly several on one line)
+        if stripped.startswith("$d ") or stripped.startswith("$d\t"):
+            for m_d in re.finditer(r"\$d\s+([^\$]+?)\s*\$", stripped):
+                pf.disjoint.append(m_d.group(1).strip())
+            continue
+
+        # Hypothesis
+        m = _RE_HYPOTHESIS.match(stripped)
+        if m and not in_calc:
+            label = m.group(1).strip()
+            stmt = m.group(2).strip().rstrip("$. ")
+            if stmt:
+                pf.hypotheses.append((label, stmt))
+                continue
+
+        # Theorem $p statement (possibly multi-line with $= proof tokens)
+        m = re.match(r"([\w.]+)\s*\$p\s+(.*?)\s*\$=", stripped)
+        if m and not in_calc:
+            pf.theorem_label = m.group(1)
+            pf.theorem_statement = m.group(2).strip()
+            # Check if proof tokens + $. are on the same line
+            after_eq = stripped[m.end():]
+            if "$." in after_eq:
+                # single-line: "ac9s $p |- ... $= tokens $."
+                pf.proof_tokens = after_eq[: after_eq.rfind("$.")].strip()
+            elif after_eq.strip():
+                # "$= tokens\n" (tokens start here, $. later)
+                in_proof = True
+                proof_buf = [after_eq.strip()]
+            else:
+                # "$=\n" (tokens on next line)
+                in_proof = True
+                proof_buf = []
+            continue
+
+        # Block delimiters
+        if stripped in ("$", "$}", "${"):
+            continue
+
+        # "." terminates a calculation; "$." book-ends are handled above
+        if stripped == "." and in_calc:
+            calc = parse_calculation("\n".join(calc_lines))
+            if calc.steps:
+                pf.calculations.append(calc)
+            calc_lines = []
+            in_calc = False
+            continue
+
+        # Otherwise, a step line: either starting or continuing a calculation
+        in_calc = True
+        calc_lines.append(raw)
+
+    # Trailing calculation without terminator
+    if calc_lines and any(s.strip() and s.strip() != "." for s in calc_lines):
+        calc = parse_calculation("\n".join(calc_lines))
         if calc.steps:
             pf.calculations.append(calc)
 

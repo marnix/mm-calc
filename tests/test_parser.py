@@ -34,14 +34,23 @@ def test_parse_calculation_multiple_steps():
 
 def test_parse_file_simple():
     text = (
-        "* (Ac9.1) |- A e. _V $==>\n"
-        "*  |- $...\n"
-        "    X_ x e. A B =/= (/) { by (n0) using (bicomi) } (bitri)\n"
+        "$[ set.mm $]\n"
+        "${\n"
+        "$d f x A $.  $d f B $.\n"
+        "myac9.1 $e |- A e. _V $.\n"
+        "myac9s $p |- ( A. x e. A B =/= (/) <-> X_ x e. A B =/= (/) ) $=\n"
+        "  cB c0 wne vx cA wral impbii $.\n"
+        "$}\n"
+        "X_ x e. A B =/= (/)\n"
+        "    <-> { by (n0) using (bicomi) } (bitri)\n"
+        "    E. f f e. X_ x e. A B\n"
         "    ."
     )
     pf = parse_file(text)
-    assert pf.context_label == "Ac9.1"
-    assert pf.context_line == "A e. _V"
+    assert pf.theorem_label == "myac9s"
+    assert pf.hypotheses == [("myac9.1", "|- A e. _V")]
+    assert pf.disjoint == ["f x A", "f B"]
+    assert pf.proof_tokens == "cB c0 wne vx cA wral impbii"
     assert len(pf.calculations) >= 1
 
 

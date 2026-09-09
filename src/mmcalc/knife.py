@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -76,4 +78,45 @@ def dump_formula(mm_path: Path) -> str:
 def export_proof(mm_path: Path, label: str) -> str:
     """Export a proof for a given label."""
     result = run_knife(["--export", label], mm_path)
+    return result.stdout
+
+
+def _mm_tool() -> str:
+    """The reference Metamath binary (INTERACTIVE_METAMATH env or `metamath`)."""
+    return os.environ.get("MM_TOOL", "metamath")
+
+
+def show_normal_proof(mm_path: Path, label: str) -> str:
+    """Return a theorem's proof in uncompressed (normal) form.
+
+    Uses the reference Metamath program's `show proof <label> /normal`
+    command, which emits the label sequence as it appears in an
+    uncompressed proof (each assertion pops its own mandatory
+    hypotheses).  The returned string is the whitespace-joined labels.
+    """
+    db = str(mm_path.resolve())
+    result = subprocess.run(
+        [_mm_tool(), f'read "{db}"', f"show proof {label} /normal", "exit"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    marker = "Clip out the proof below this line to put it in the source file:"
+    if result.returncode != 0 or marker not in result.stdout:
+        raise RuntimeError(result.stdout or result.stderr)
+    body = result.stdout.split(marker, 1)[1].split("\n----", 1)[0]
+    return " ".join(body.split()).rstrip("$.").strip()
+
+
+def show_statement(mm_path: Path, label: str) -> str:
+    """Show a statement with its hypotheses, as the reference tool renders it."""
+    db = str(mm_path.resolve())
+    result = subprocess.run(
+        [_mm_tool(), f'read "{db}"', f"show statement {label}", "exit"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or label not in result.stdout:
+        raise RuntimeError(result.stdout or result.stderr)
     return result.stdout

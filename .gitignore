@@ -145,3 +145,11 @@ ql.mm
 hol.mm
 peano.mm
 big-unifier.mm
+
+# Scratch/derived artifacts
+*.mmp
+myac9s.mm
+myac9s_uncompressed.mm
+ac9s_test.mm
+ac9s.mm
+examples/ac9s.mm
