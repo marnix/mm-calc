@@ -29,6 +29,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-xdist",
     "ruff",
     "mypy",
 ]
@@ -55,3 +56,4 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-n auto"
