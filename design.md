@@ -44,11 +44,7 @@ $( which mathematical context are we working in: $)
 $[ set.mm $]
 $( parsing rules: to parse ` x y z ` we construct the
    unique proof tree of ` $TOP x y z ` . $)
-$c $TOP $.  
-TOP.wff $a $TOP wff ph $.
-TOP.turnstile $a $TOP |- ph $.
-TOP.set $a $TOP set x $.
-TOP.class $a $TOP class x $.
+$c $TOP $.
 ```
 
 Together with declarations that say things like:
@@ -89,9 +85,40 @@ A `.mmcalc` file contains:
 - Calculational proof steps with justifications
 
 Each step has:
-- An expression
+- An expression (opaque Metamath token text; no token is interpreted)
 - A justification: `{ by (rule) using (other rules) }`
 - Optional indexed references: `(-1:impbii)`
+
+Nothing in the parser or engine interprets any *mathematical* token
+(`|-`, `<->`, `->`, parentheses, ...): only file-syntax markers are
+recognized (`$[`, `$d`, `$e`, `$p`, `$=`, `$.`, `$(`, `$}`, `${`, `$c`,
+`$a`).  Expression structure is recovered exclusively through TOPLEVEL
+parsing (below), using the rules in the `.settings` file.
+
+### TOPLEVEL Parsing (Implemented)
+
+A top-level *expression* is a statement: a typecode prefix followed by a
+formula, e.g. `|- x e. A`, `wff ...`, `class ...`, `setvar x`.  Its parse
+tree is the (essentially unique) proof tree of `TOPLEVEL <statement>`:
+the `TOP.*` axiom for that typecode is the last step, and the formula's
+grammar tree is proved underneath.
+
+The `.settings` file therefore declares the TOPLEVEL token and one axiom
+per statement type, e.g. (`examples/ac9s.settings`):
+
+```metamath
+$[ set.mm $]
+$c TOPLEVEL $.
+TOP.wff $a TOPLEVEL wff ph $.
+TOP.set $a TOPLEVEL setvar x $.
+TOP.class $a TOPLEVEL class A $.
+TOP.turnstile $a TOPLEVEL |- ph $.
+```
+
+So `|- x e. A` parses (via the reference tool) to
+`vx cv cA wcel TOP.turnstile`, and that label sequence is the proof of
+`TOPLEVEL |- x e. A` — the parse tree, proved from `wff x e. A` (which is
+proved from `class x` via `cv`, `class A`, `wcel`).
 
 ### Proof Generation Strategy
 
@@ -100,7 +127,34 @@ For each calculational step:
 2. Look up the referenced theorem via metamath-knife
 3. Determine substitutions by matching hypothesis expressions
 4. Build the proof tree by chaining applications
-5. Output compressed proof tokens
+5. Output uncompressed proof tokens
+
+**Implemented (slice 1):** a calc with one relational step, where the
+relation is stated by applying exactly one rule.  For a calc
+
+```
+A = B
+<-> { by (dfcleq) }
+A. x ( x e. A <-> x e. B )
+.
+```
+
+the engine (`derive_calc_proof`) looks up `dfcleq` via the reference
+tool's `show statement dfcleq /full`, which lists that statement's
+mandatory hypotheses in RPN order (`vx cA cB`) and its mandatory
+disjoint-variable pairs (`<x,A>`, `<x,B>`).  It verifies that the theorem
+statement is a verbatim instance of the rule's conclusion, and emits the
+proof tokens `vx cA cB dfcleq` plus the `$d` declarations.  The theorem
+block is then generated and verified with both the reference Metamath tool
+(`verify proof *`) and metamath-knife (`--verify`).
+
+The `mmcalc generate` command derives these proof tokens automatically
+when a theorem has none yet (or only a `?` placeholder).
+
+**Not yet implemented:** relation chaining across multiple steps
+(`bitri`/`impbii` transitivity, `bicomi` symmetry, `exbii` windowing,
+backwards `<-` steps) — see the "Additional Information Needed" section,
+and the `using` hints and indexed references in the ac9s example.
 
 ## Related
 
