@@ -48,9 +48,7 @@ def test_derive_single_relation_step():
 
     pf = parse_file(_DFCLEQ_CALC)
     assert len(pf.calculations) == 1
-    tokens, disjoint = derive_calc_proof(
-        Path("set.mm"), pf.calculations[0], pf.theorem_statement
-    )
+    tokens, disjoint = derive_calc_proof(Path("set.mm"), pf.calculations[0], pf.theorem_statement)
     assert tokens == ["vx", "cA", "cB", "dfcleq"]
     assert sorted(disjoint) == ["x A", "x B"]
 
@@ -61,9 +59,7 @@ def test_derive_calc_generated_mm_verifies(tmp_path: Path):
     from mmcalc.generator import generate_mm
 
     pf = parse_file(_DFCLEQ_CALC)
-    tokens, disjoint = derive_calc_proof(
-        Path("set.mm"), pf.calculations[0], pf.theorem_statement
-    )
+    tokens, disjoint = derive_calc_proof(Path("set.mm"), pf.calculations[0], pf.theorem_statement)
     pf.proof_tokens = " ".join(tokens)
     pf.disjoint = list(dict.fromkeys(list(pf.disjoint) + disjoint))
 
@@ -93,11 +89,23 @@ def test_derive_two_step_chain():
         _MINICHAIN_DB, pf.calculations[0], pf.theorem_statement, settings=settings
     )
     assert tokens == [
-        "vx", "cA", "wcel",
-        "vx", "cB", "wcel",
-        "vx", "cC", "wcel",
-        "vx", "cA", "cB", "r1",
-        "vx", "cB", "cC", "r2",
+        "vx",
+        "cA",
+        "wcel",
+        "vx",
+        "cB",
+        "wcel",
+        "vx",
+        "cC",
+        "wcel",
+        "vx",
+        "cA",
+        "cB",
+        "r1",
+        "vx",
+        "cB",
+        "cC",
+        "r2",
         "bitri",
     ]
     assert disjoint == []

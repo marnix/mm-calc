@@ -47,7 +47,7 @@ def test_generate_autogenerates_proof_and_verifies(tmp_path: Path):
     assert "  $d x B $." in body
 
     result = subprocess.run(
-        ['metamath', f'read "{out.resolve()}"', "verify proof *", "exit", "No"],
+        ["metamath", f'read "{out.resolve()}"', "verify proof *", "exit", "No"],
         capture_output=True,
         text=True,
         check=False,

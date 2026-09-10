@@ -33,7 +33,8 @@ class Justification:
 
     rule_refs: list[str] = field(default_factory=list)
     using_refs: list[str] = field(default_factory=list)
-    index: int | None = None  # For numbered references like (-1:impbii)
+    join_refs: list[tuple[int | None, str]] = field(default_factory=list)
+    # indexed: None for a plain (bitri) ref, -1 for (-1:impbii)
 
 
 @dataclass
@@ -63,9 +64,7 @@ _RE_JUSTIFICATION = re.compile(r"\{\s*by\s+(.+?)\}")
 _RE_INCLUDE = re.compile(r"\$\[\s*(.+?)\s*\$\]")
 _RE_DISJOINT = re.compile(r"^\$d\s+(.*?)\s*\.\s*$")
 _RE_HYPOTHESIS = re.compile(r"([\w.]+)\s*\$e\s+(.*?)\s*\.?\s*$")
-_RE_THEOREM = re.compile(
-    r"([\w.]+)\s*\$p\s+(.*?)\s*\$=\s*(.*?)\s*\.\s*$", re.DOTALL
-)
+_RE_THEOREM = re.compile(r"([\w.]+)\s*\$p\s+(.*?)\s*\$=\s*(.*?)\s*\.\s*$", re.DOTALL)
 
 
 def _parse_justification(text: str) -> Justification | None:
@@ -74,34 +73,28 @@ def _parse_justification(text: str) -> Justification | None:
     if not m:
         return None
 
-    inner = m.group(1)
     just = Justification()
+    inner = m.group(1)
 
     if "using" in inner:
         parts = inner.split("using")
         rules_part, using_part = parts[0], parts[1]
-        just.rule_refs = [
-            r for r in re.findall(r"\(([\w.]+)\)", rules_part)
-        ]
-        just.using_refs = [
-            r for r in re.findall(r"\(([\w.]+)\)", using_part)
-        ]
+        just.rule_refs = [r for r in re.findall(r"\(([\w.]+)\)", rules_part)]
+        just.using_refs = [r for r in re.findall(r"\(([\w.]+)\)", using_part)]
     else:
         for ref_match in _RE_RULE_REF.finditer(inner):
-            if ref_match.group(1) is not None:
-                just.index = int(ref_match.group(1))
-                just.rule_refs.append(ref_match.group(2))
-            else:
-                just.rule_refs.append(ref_match.group(3))
-
-    # Also look for indexed rule references outside the { by ... } block
-    after = text[m.end():]
-    for ref_match in _RE_RULE_REF.finditer(after):
-        if ref_match.group(1) is not None:
-            just.index = int(ref_match.group(1))
-            just.rule_refs.append(ref_match.group(2))
+            just.rule_refs.append(ref_match.group(2) or ref_match.group(3))
 
     return just
+
+
+def _parse_join_refs(after: str) -> list[tuple[int | None, str]]:
+    """Trailing refs after a justification block, like '(bitri)' or '(-1:impbii)'."""
+    join_refs: list[tuple[int | None, str]] = []
+    for ref_match in _RE_RULE_REF.finditer(after):
+        index = int(ref_match.group(1)) if ref_match.group(1) is not None else None
+        join_refs.append((index, ref_match.group(2) or ref_match.group(3)))
+    return join_refs
 
 
 def _parse_step_line(line: str) -> Step | None:
@@ -118,8 +111,11 @@ def _parse_step_line(line: str) -> Step | None:
     justification = _parse_justification(line)
     step_text = _RE_JUSTIFICATION.sub("", line).strip()
 
-    # Strip an indexed rule reference like (1:impbii) after the justification
-    step_text = re.sub(r"\(\s*-?\d+\s*:\s*[\w.]+\s*\)\s*$", "", step_text).strip()
+    if justification is not None:
+        m = _RE_JUSTIFICATION.search(line)
+        after = line[m.end() :] if m else ""
+        justification.join_refs = _parse_join_refs(after)
+        step_text = step_text[: -len(after.strip())].strip() if after.strip() else step_text
 
     if not step_text or step_text == "$...":
         return None
@@ -227,7 +223,7 @@ def parse_file(source: str | Path) -> ProofFile:
             pf.theorem_label = m.group(1)
             pf.theorem_statement = m.group(2).strip()
             # Check if proof tokens + $. are on the same line
-            after_eq = stripped[m.end():]
+            after_eq = stripped[m.end() :]
             if "$." in after_eq:
                 # single-line: "ac9s $p |- ... $= tokens $."
                 pf.proof_tokens = after_eq[: after_eq.rfind("$.")].strip()

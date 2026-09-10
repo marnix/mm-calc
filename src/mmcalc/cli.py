@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from mmcalc import __version__
-from mmcalc.config import parse_settings
+from mmcalc.config import Settings, parse_settings
 from mmcalc.generator import generate_mm
 from mmcalc.parser import ProofFile, parse_file
 
@@ -16,6 +16,7 @@ def _autogenerate_tokens(
     pf: ProofFile,
     db_path: Path,
     tool: str | None = None,
+    settings: Settings | None = None,
 ) -> None:
     """Fill in theorem proof tokens from the calc steps, if absent.
 
@@ -29,7 +30,7 @@ def _autogenerate_tokens(
 
     calc = pf.calculations[0]
     tokens, disjoint = derive_calc_proof(
-        db_path, calc, pf.theorem_statement, tool=tool
+        db_path, calc, pf.theorem_statement, tool=tool, settings=settings
     )
     pf.proof_tokens = " ".join(tokens)
     pf.disjoint = list(dict.fromkeys(list(pf.disjoint) + disjoint))
@@ -57,7 +58,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
     try:
         includes = (settings.database_includes if settings else []) + list(pf.settings)
         db_path = Path(includes[0]) if includes else Path("set.mm")
-        _autogenerate_tokens(pf, db_path, tool=_mm_tool())
+        _autogenerate_tokens(pf, db_path, tool=_mm_tool(), settings=settings)
     except Exception as e:
         print(f"Error deriving proof tokens: {e}", file=sys.stderr)
         return 1
@@ -217,9 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     p_gen.add_argument("file", help="Path to .mmcalc file")
     p_gen.add_argument("-s", "--settings", help="Path to .settings file")
     p_gen.add_argument("-o", "--output", help="Output .mm path (default: <file>.mm)")
-    p_gen.add_argument(
-        "--no-verify", action="store_true", help="Skip metamath-knife verification"
-    )
+    p_gen.add_argument("--no-verify", action="store_true", help="Skip metamath-knife verification")
 
     # verify subcommand
     p_verify = sub.add_parser("verify", help="Verify a Metamath database")
@@ -262,9 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Parse a Metamath expression via TOPLEVEL and print its parse tree RPN",
     )
     p_px.add_argument("expression", help="Expression token sequence to parse")
-    p_px.add_argument(
-        "--database", required=True, help="Path to the database (e.g. set.mm)"
-    )
+    p_px.add_argument("--database", required=True, help="Path to the database (e.g. set.mm)")
     p_px.add_argument("--settings", required=True, help="Path to the .settings file")
 
     args = parser.parse_args(argv)
