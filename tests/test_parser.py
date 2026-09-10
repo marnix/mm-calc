@@ -21,9 +21,32 @@ def test_parse_step_with_indexed_rule():
     step = calc.steps[0]
     assert step.expression == "A. x e. A B =/= (/)"
     assert step.justification is not None
-    assert step.justification.index == -1
-    assert "impbii" in step.justification.rule_refs
+    assert [r for r in step.justification.join_refs] == [(-1, "impbii")]
+    assert "impbii" not in step.justification.rule_refs
     assert "ac6s4" in step.justification.rule_refs
+
+
+def test_parse_step_with_join_ref():
+    step_text = "X_ x e. A B =/= (/) { by (n0) using (bicomi) } (bitri)"
+    calc = parse_calculation(step_text)
+    assert len(calc.steps) == 1
+    step = calc.steps[0]
+    assert step.expression == "X_ x e. A B =/= (/)"
+    assert step.justification is not None
+    assert step.justification.rule_refs == ["n0"]
+    assert step.justification.using_refs == ["bicomi"]
+    assert step.justification.join_refs == [(None, "bitri")]
+
+
+def test_parse_step_join_ref_relational_expression():
+    step_text = "<-> { by (r1) } (bitri)"
+    calc = parse_calculation(step_text)
+    assert len(calc.steps) == 1
+    step = calc.steps[0]
+    assert step.expression == "<->"
+    assert step.justification is not None
+    assert step.justification.rule_refs == ["r1"]
+    assert step.justification.join_refs == [(None, "bitri")]
 
 
 def test_parse_calculation_multiple_steps():
