@@ -137,6 +137,9 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Development-only work area (persistent local artifacts)
+/devonly/
+
 # Large Metamath database files from set.mm repository
 set.mm
 iset.mm
