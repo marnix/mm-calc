@@ -151,10 +151,43 @@ block is then generated and verified with both the reference Metamath tool
 The `mmcalc generate` command derives these proof tokens automatically
 when a theorem has none yet (or only a `?` placeholder).
 
-**Not yet implemented:** relation chaining across multiple steps
-(`bitri`/`impbii` transitivity, `bicomi` symmetry, `exbii` windowing,
-backwards `<-` steps) — see the "Additional Information Needed" section,
-and the `using` hints and indexed references in the ac9s example.
+**Implemented (slice 2):** a two-step `<->` chain joined by one
+transitivity rule, e.g. for the mini-DB
+
+```
+x e. A
+<-> { by (r1) } (bitri)
+x e. B
+<-> { by (r2) }
+x e. C
+.
+```
+
+with theorem `|- ( x e. A <-> x e. C )`.  The trailing `(bitri)` on a
+relational step is a *join reference*: it names the rule that combines
+the relational steps.  The engine looks up `bitri`'s metadata, which
+lists (in RPN order) its `$f` well-formedness hypotheses (`wph wps wch`)
+and its `$e` step hypotheses (`bitri.1 |- ( ph <-> ps )`,
+`bitri.2 |- ( ps <-> ch )`).  It substitutes the `$f` variables by the
+calc expressions in order and checks that the join rule's conclusion
+matches the theorem statement and each `$e` hypothesis matches the
+corresponding step rule's conclusion.  It then emits, for every `$f`
+hypothesis, a well-formedness cell for the matching expression (the
+TOPLEVEL parse of `typecode expr` minus the trailing `TOP.*` step), then
+one step proof per relational step, then the join rule:
+
+```
+vx cA wcel vx cB wcel vx cC wcel vx cA cB r1 vx cB cC r2 bitri
+```
+
+Parser-wise, trailing `(rule)` after a `{ by ... }` block is stored as a
+`join_refs` entry (with an optional numeric index for `(-1:impbii)` and
+similar) and stripped from the step's expression.
+
+**Not yet implemented:** relation chaining across more than two steps,
+indexed joins, `bicomi` symmetry for backward `<-` steps, `exbii`
+windowing, and generalized `using` hints — see the "Additional
+Information Needed" section and the ac9s example.
 
 ## Related
 
