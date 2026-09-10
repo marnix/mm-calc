@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TextIO
-
 from mmcalc.config import Settings
 from mmcalc.parser import ProofFile
 
@@ -69,9 +67,3 @@ def generate_mm(pf: ProofFile, settings: Settings | None = None) -> str:
 
     out.append("$}")
     return "\n".join(out)
-
-
-def write_mm_file(pf: ProofFile, dest: TextIO, settings: Settings | None = None) -> None:
-    """Write a generated .mm file to a text stream."""
-    dest.write(generate_mm(pf, settings))
-    dest.write("\n")

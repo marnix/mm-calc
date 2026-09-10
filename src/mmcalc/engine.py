@@ -25,10 +25,6 @@ from mmcalc.knife import _mm_tool
 from mmcalc.parser import Calculation
 
 
-class EngineError(Exception):
-    """Raised when the engine cannot derive a proof (unused/partial)."""
-
-
 @dataclass
 class RuleInfo:
     """Metadata for a statement used as a proof rule."""

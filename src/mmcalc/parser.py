@@ -17,7 +17,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TextIO
 
 
 @dataclass
@@ -43,7 +42,6 @@ class Calculation:
 
     steps: list[Step] = field(default_factory=list)
     label: str = ""
-    context: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -140,15 +138,6 @@ def parse_calculation(text: str) -> Calculation:
         if step:
             calc.steps.append(step)
     return calc
-
-
-def _is_comment_line(stripped: str) -> bool:
-    """Check whether a line is a comment or empty (to be skipped)."""
-    if not stripped:
-        return True
-    if stripped.startswith("*"):
-        return True
-    return stripped.startswith("$(") or stripped.startswith("$)") or stripped == "$"
 
 
 def parse_file(source: str | Path) -> ProofFile:
@@ -276,23 +265,3 @@ def parse_file(source: str | Path) -> ProofFile:
             pf.calculations.append(calc)
 
     return pf
-
-
-def write_file(pf: ProofFile, dest: TextIO) -> None:
-    """Write a ProofFile back to text format."""
-    for line in pf.preamble:
-        dest.write(line + "\n")
-
-    dest.write("$==>\n")
-    for calc in pf.calculations:
-        for _i, step in enumerate(calc.steps):
-            line = f"    {step.expression}"
-            if step.justification:
-                just = step.justification
-                refs = " ".join(f"({r})" for r in just.rule_refs)
-                using = ""
-                if just.using_refs:
-                    using = " using " + " ".join(f"({r})" for r in just.using_refs)
-                line += f"    {{ by {refs}{using} }}"
-            dest.write(line + "\n")
-        dest.write("    .\n")
