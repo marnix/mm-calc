@@ -3,16 +3,16 @@
 Top-priority item first; the rest are the design ideas and follow-ups gathered so far,
 kept so nothing is lost when a session ends.
 
-## 1. CI: GitHub action to run tests and quality checks
-Add a GitHub action that at least:
-- runs the full test suite (`pytest`), and
-- checks the code is formatted, linted, and typechecked cleanly
-  (`ruff format --check`, `ruff check`, `mypy`).
-
-Notes:
-- Many tests are `@pytest.mark.skipif` gated on `metamath` on PATH and/or a local `set.mm`.
-  Decide whether CI installs `metamath` (and `metamath-knife`, already on PATH locally)
-  to actually run those, or whether CI skips them and a separate matrix job covers them.
+## 1. CI: GitHub action to run tests and quality checks (DONE)
+`.github/workflows/ci.yml`: a `lint` job (`ruff format --check`, `ruff check`, `mypy`)
+and a `test` job (`pytest`). The tools are real runtime dependencies, not mocked:
+- reference `metamath` v0.198 (latest tag): built in the action with the README gcc
+  command line `gcc m*.c -o metamath -O3 -funroll-loops -finline-functions
+  -fomit-frame-pointer -Wall -pedantic -DINLINE=inline`.
+- `metamath-knife` v0.3.9 (latest tag): built in the action on the latest stable Rust
+  via `cargo install --git https://github.com/metamath/metamath-knife --tag v0.3.9`.
+- Both binaries are cached under `.ci/tools/bin` (actions/cache) so they are not
+  rebuilt every run; `set.mm` is fetched from GitHub and cached keyed on its HEAD commit.
 
 ## 2. Current slice: 2-step `<->` chain (in progress)
 Implement the forward two-step `<->` chain via one join rule (bitri-style), on the

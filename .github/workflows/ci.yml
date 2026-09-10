@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Latest tagged releases of the two Metamath tools (checked via ls-remote tags).
+  MM_VERSION: v0.198        # metamath-exe, the interactive reference tool
+  KNIFE_VERSION: v0.3.9     # metamath-knife, the Rust verifier
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff format --check .
+      - run: ruff check .
+      - run: mypy src
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+
+      - name: Cache Metamath tools (reference + knife)
+        id: cache-tools
+        uses: actions/cache@v4
+        with:
+          path: .ci/tools
+          key: tools-${{ runner.os }}-${{ env.MM_VERSION }}-${{ env.KNIFE_VERSION }}
+
+      - name: Build reference metamath (mm README gcc command line)
+        run: |
+          set -euo pipefail
+          if [ ! -x .ci/tools/bin/metamath ]; then
+            mkdir -p .ci/tools/bin
+            git clone --depth 1 --branch "$MM_VERSION" https://github.com/metamath/metamath-exe .ci/mm-src
+            cd .ci/mm-src
+            gcc m*.c -o metamath -O3 -funroll-loops -finline-functions \
+              -fomit-frame-pointer -Wall -pedantic -DINLINE=inline
+            mv metamath ../tools/bin/
+          fi
+
+      - name: Set up latest stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build metamath-knife (cargo)
+        run: |
+          set -euo pipefail
+          if [ ! -x .ci/tools/bin/metamath-knife ]; then
+            cargo install --git https://github.com/metamath/metamath-knife \
+              --tag "$KNIFE_VERSION" --root .ci/tools
+          fi
+
+      - name: Add tools to PATH
+        run: echo "${{ github.workspace }}/.ci/tools/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve set.mm HEAD for cache key
+        id: setmm
+        run: echo "setmm=$(git ls-remote https://github.com/metamath/set.mm HEAD | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache set.mm
+        uses: actions/cache@v4
+        with:
+          path: set.mm
+          key: setmm-${{ runner.os }}-${{ steps.setmm.outputs.setmm }}
+          restore-keys: setmm-${{ runner.os }}-
+
+      - name: Fetch set.mm if not cached
+        run: |
+          if [ ! -s set.mm ]; then
+            curl -fL -o set.mm https://raw.githubusercontent.com/metamath/set.mm/master/set.mm
+          fi
+
+      - name: Smoke-check tools
+        run: |
+          command -v metamath
+          command -v metamath-knife
+          test -s set.mm
+
+      - name: Run tests
+        run: pytest -q
