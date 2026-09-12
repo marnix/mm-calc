@@ -53,6 +53,35 @@ join rule's `$e` hypothesis (substitution-aware), not just that the calc express
 appear verbatim in the theorem statement. Decide how far to go; the definitive check is
 the reference tool's own `verify proof *` on the generated file.
 
+## 7. Single runtime component via metamath-rs, with C bindings from Zig
+Replace both `metamath` (reference) and `metamath-knife` (currently separate tools
+invoked by bare name from PATH) with
+one component built on the `metamath-rs` library (the crate metamath-knife is built
+on, split into library vs binary since v0.3.8). Preferred shape: C bindings called
+from a Zig executable ("C bindings from Zig").
+
+- Rust side (metamath-rs is the only implementation, so the library must be built by
+  Rust): a thin wrapper crate exporting `#[no_mangle] pub extern "C"` functions for
+  exactly the calls we need, `crate-type = ["staticlib"]`, plus a C header via
+  cbindgen. Design note: handle `StatementRef<'a>` etc. on the Rust side; the FFI
+  takes/returns simple values (write strings into caller-provided buffers).
+- Zig side: `@cImport(@cInclude("mmcalc_meta.h"))`, link the staticlib, produce one
+  executable that speaks the same bare-name-on-PATH protocol as today
+  (statement/rule info in `/full` style, expression parse -> RPN labels, proof
+  export, verify).
+- Feasibility checkpoint: `grammar::parse_formula` returns a syntax tree of the
+  actual statement labels (`Reduce.label` is "the syntax axiom being applied"),
+  and `Formula::labels_postorder_iter()` gives them in RPN order -- so the reference
+  tool's `prove`/`improve` proof search can be replaced by a deterministic grammar
+  parse (no prover needed). Remaining `rule_info` data (mandatory hyps in RPN order)
+  is present in `statement_by_label`/`math_iter`/`proof_slice_at`, but not a public
+  one-liner -- the wrapper adds it.
+- Spike first: prove `parse_formula` output == current TOPLEVEL proof-search results
+  on the self-contained mini-DB fixture tests (type conversions, `$d`, the synthetic
+  TOPLEVEL rules) before touching engine/toplevel.
+- Build in CI once, cache it (same pattern as knife today: v0.198 reference /
+  v0.3.9 knife tags). No local disk-space buildup needed.
+
 ## Maintenance / infrastructure
 - Keep long-lived scratch artifacts out of `/tmp` (transient): persisted development
   mini-DBs live under `devonly/` (git-ignored). Verified mini-DB: `devonly/minichain.mm`.
